@@ -32,7 +32,21 @@ Python 虽然是解释性语言，但为了执行效率会首先将源码编译�
 
 Python 解释器是一个基于堆栈（`Stack`）的工作模型。许多指令都是从堆栈中获取需要的参数，并且执行的结果通常也要再次推到堆栈中。通常，这些指令也会对堆栈的状态做出一定的假设，比如 `BINARY_OP` 指令就假定在它执行的时候，需要的两个操作数都已经在栈上，所以就不要额外的参数了。
 
+## 核心组件
+
+![interpreter-callstack.png](https://aosabook.org/en/500L/interpreter-images/interpreter-callstack.png)
+
+1. Stack：Call Stack、Data Stack、Block Stack
+2. Frame
+3. Class：VirtualMachine Class、Frame Class、Function Class、Block Class
+   - A `VirtualMachine` class, which manages the highest-level structure, particularly the call stack of frames, and contains a mapping of instructions to operations. This is a more complex version of the `Intepreter` object above.
+   - A `Frame` class. Every `Frame` instance has one code object and manages a few other necessary bits of state, particularly the global and local namespaces, a reference to the calling frame, and the last bytecode instruction executed.
+   - A `Function` class, which will be used in place of real Python functions. Recall that calling a function creates a new frame in the interpreter. We implement Function so that we control the creation of new Frames.
+   - A `Block` class, which just wraps the three attributes of blocks. (The details of blocks aren't central to the Python interpreter, so we won't spend much time on them, but they're included here so that Byterun can run real Python code.)
+
 参考：
 
 [重写 500 Lines or Less 项目 - A Python Interpreter Written in Python - SHUHARI 的博客](https://shuhari.dev/blog/2020/12/500lines-rewrite-interpreter)
+
+[500 Lines or Less: A Python Interpreter Written in Python](https://aosabook.org/en/500L/a-python-interpreter-written-in-python.html)
 

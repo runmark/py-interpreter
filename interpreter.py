@@ -1,11 +1,20 @@
 import dis
+import builtins
 
 
 class Interpreter:
-    def __init__(self, src: str):
+    def __init__(self, src: str, local_vars: None, dump_code=False, trace_stack=False):
         self._code = compile(src, filename="", mode="exec")
-        self._locals = {}
+        self._builtins = {
+            x: getattr(builtins, x) for x in dir(builtins) if not x.startswith("__")
+        }
+        self._locals = {**local_vars}
         self._stack = []
+        self.dump_code = dump_code
+        self.trace_stack = trace_stack
+        # if local_vars:
+        #     for k, v in local_vars.items():
+        #         self.set_local(k, v)
 
     def get_local(self, var_name: str):
         return self._locals[var_name]
@@ -22,16 +31,23 @@ class Interpreter:
     def stack_pop(self):
         return self._stack.pop(-1)
 
+    def stack_popn(self, n):
+        if n > 0:
+            result = self._stack[-n:]
+            self._stack = self._stack[:-n]
+            return result
+        return []
+
     def get_name(self, namei):
         return self._code.co_names[namei]
 
-    def exec(self, dump_code=False, trace_stack=False):
-        if dump_code:
+    def exec(self):
+        if self.dump_code:
             self.dump_code()
         for instruction in dis.get_instructions(self._code):
             fn = getattr(self, "exec_" + instruction.opname)
             fn(instruction.arg)
-            if trace_stack:
+            if self.trace_stack:
                 self.dump_stack(instruction)
 
     def dump_code(self):
@@ -51,7 +67,12 @@ class Interpreter:
         Pushes the value associated with co_names[namei] onto the stack.
         """
         name = self.get_name(namei)
-        value = self.get_local(name)
+        if name in self._locals:
+            value = self.get_local(name)
+        elif name in self._builtins:
+            value = self._builtins[name]
+        else:
+            raise NameError(name)
         self.stack_push(value)
 
     def exec_LOAD_CONST(self, namei):
@@ -83,3 +104,9 @@ class Interpreter:
         Returns with TOS to the caller of the function.
         """
         pass
+
+    def exec_CALL_FUNCTION(self, args_count):
+        args = self.stack_popn(args_count)
+        func = self.stack_pop()
+        result = func(*args)
+        self.stack_push(result)

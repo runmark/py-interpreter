@@ -4,12 +4,22 @@ from interpreter import Interpreter
 
 
 class InterpreterTest(unittest.TestCase):
+    def exec_interpreter(
+        self, source, local_vars=None, dump_code=False, trace_stack=False
+    ):
+        interpreter = Interpreter(source, local_vars, dump_code, trace_stack)
+        interpreter.exec()
+        return interpreter
+
     def test_add(self):
         source = "n = a + 1"
-        interpreter = Interpreter(source)
-        interpreter.set_local("a", 2)
-        interpreter.exec(True, True)
+        interpreter = self.exec_interpreter(source, {"a": 2})
         self.assertEqual(3, interpreter.get_local("n"))
+
+    def test_call_func(self):
+        source = "n = divmod(a, 2)"
+        interpreter = self.exec_interpreter(source, {"a": 11}, False, False)
+        self.assertEqual((5, 1), interpreter.get_local("n"))
 
 
 # if __name__ == "__main__":

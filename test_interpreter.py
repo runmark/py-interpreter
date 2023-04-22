@@ -21,6 +21,19 @@ class InterpreterTest(unittest.TestCase):
         interpreter = self.exec_interpreter(source, {"a": 11}, False, False)
         self.assertEqual((5, 1), interpreter.get_local("n"))
 
+    def test_if(self):
+        source = """
+if a > 10:
+  b = True
+else:
+  b = False
+                """.strip()
+        interpreter = self.exec_interpreter(source, {"a": 11}, True, True)
+        self.assertEqual(True, interpreter.get_local("b"))
+
+        interpreter = self.exec_interpreter(source, {"a": 3}, False, False)
+        self.assertEqual(False, interpreter.get_local("b"))
+
 
 # if __name__ == "__main__":
 #     unittest.main()

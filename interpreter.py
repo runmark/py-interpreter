@@ -2,6 +2,10 @@ import dis
 import builtins
 
 
+class ReturnValue(Exception):
+    pass
+
+
 class Interpreter:
     def __init__(self, src: str, local_vars: None, dump_code=False, trace_stack=False):
         self._code = compile(src, filename="", mode="exec")
@@ -10,8 +14,10 @@ class Interpreter:
         }
         self._locals = {**local_vars}
         self._stack = []
-        self.dump_code = dump_code
-        self.trace_stack = trace_stack
+        self._dump_code = dump_code
+        self._trace_stack = trace_stack
+        self._instructions = list(dis.get_instructions(self._code))
+        self._next_instruction = 0
         # if local_vars:
         #     for k, v in local_vars.items():
         #         self.set_local(k, v)
@@ -42,13 +48,19 @@ class Interpreter:
         return self._code.co_names[namei]
 
     def exec(self):
-        if self.dump_code:
+        if self._dump_code:
             self.dump_code()
-        for instruction in dis.get_instructions(self._code):
-            fn = getattr(self, "exec_" + instruction.opname)
-            fn(instruction.arg)
-            if self.trace_stack:
-                self.dump_stack(instruction)
+
+        while True:
+            try:
+                instruction = self._instructions[self._next_instruction]
+                fn = getattr(self, "exec_" + instruction.opname)
+                if not fn(instruction.arg):
+                    self._next_instruction += 1
+                if self._trace_stack:
+                    self.dump_stack(instruction)
+            except ReturnValue:
+                break
 
     def dump_code(self):
         print(f"====dis code of {self._code.co_name}====")
@@ -74,6 +86,7 @@ class Interpreter:
         else:
             raise NameError(name)
         self.stack_push(value)
+        return False
 
     def exec_LOAD_CONST(self, namei):
         """
@@ -82,12 +95,14 @@ class Interpreter:
         """
         value = self.get_const(namei)
         self.stack_push(value)
+        return False
 
     def exec_BINARY_ADD(self, _):
         first = self.stack_pop()
         second = self.stack_pop()
         value = first + second
         self.stack_push(value)
+        return False
 
     def exec_STORE_NAME(self, namei):
         """
@@ -97,16 +112,44 @@ class Interpreter:
         name = self.get_name(namei)
         value = self.stack_pop()
         self.set_local(name, value)
+        return False
 
     def exec_RETURN_VALUE(self, _):
         """
         RETURN_VALUE
         Returns with TOS to the caller of the function.
         """
-        pass
+        raise ReturnValue()
 
     def exec_CALL_FUNCTION(self, args_count):
         args = self.stack_popn(args_count)
         func = self.stack_pop()
         result = func(*args)
         self.stack_push(result)
+        return False
+
+    def exec_COMPARE_OP(self, opi):
+        opname = dis.cmp_op[opi]
+
+        comparers = {
+            "<": lambda x, y: x < y,
+            "<=": lambda x, y: x <= y,
+            "==": lambda x, y: x == y,
+            "!=": lambda x, y: x != y,
+            ">": lambda x, y: x > y,
+            ">=": lambda x, y: x >= y,
+            "in": lambda x, y: x in y,
+            "not in": lambda x, y: x not in y,
+            "is": lambda x, y: x is y,
+            "is not": lambda x, y: x is not y,
+        }
+
+        tos1, tos = self.stack_popn(2)
+        self.stack_push(comparers[opname])
+        pass
+
+    def exec_POP_JUMP_IF_FALSE(self, lineno):
+        pass
+
+    def exec_JUMP_FORWARD(self, relative_lineno):
+        pass

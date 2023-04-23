@@ -35,5 +35,16 @@ else:
         self.assertEqual(False, interpreter.get_local("b"))
 
 
+#     def test_define_func(self):
+#         source = """
+# def f(x):
+#     return x + 1
+
+# n = f(a)
+#         """.strip()
+#         interpreter = self.exec_interpreter(source, {"a": 11}, True, True)
+#         self.assertEqual(12, interpreter.get_local("n"))
+
+
 # if __name__ == "__main__":
 #     unittest.main()

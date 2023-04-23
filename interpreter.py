@@ -1,32 +1,47 @@
+from collections import ChainMap
 import dis
 import builtins
 
 
 class ReturnValue(Exception):
-    pass
+    def __init__(self, value):
+        self.value = value
 
 
-class Interpreter:
-    def __init__(self, src: str, local_vars: None, dump_code=False, trace_stack=False):
-        self._code = compile(src, filename="", mode="exec")
-        self._builtins = {
-            x: getattr(builtins, x) for x in dir(builtins) if not x.startswith("__")
-        }
-        self._locals = {**local_vars}
+def dump_recursive(code):
+    def dump(acode):
+        print(f"====dis code of {acode.co_name}====")
+        print("co_names:", acode.co_names)
+        print("co_consts:", acode.co_consts)
+        print("co_code", acode.co_code)
+        print("co_varnames", acode.co_varnames)
+        dis.dis(acode, depth=0)
+
+    dump(code)
+    for item in code.co_consts:
+        if hasattr(item, "co_code"):
+            dump_recursive(item)
+
+
+class Frame:
+    def __init__(self, interpreter, code, scope: ChainMap):
+        self._interpreter = interpreter
+        self._code = code
+        self.scope = scope.new_child()
         self._stack = []
-        self._dump_code = dump_code
-        self._trace_stack = trace_stack
         self._instructions = list(dis.get_instructions(self._code))
         self._next_instruction = 0
-        # if local_vars:
-        #     for k, v in local_vars.items():
-        #         self.set_local(k, v)
+
+        # self._builtins = {
+        #     x: getattr(builtins, x) for x in dir(builtins) if not x.startswith("__")
+        # }
+        # self._locals = {**local_vars}
 
     def get_local(self, var_name: str):
-        return self._locals[var_name]
+        return self.scope[var_name]
 
     def set_local(self, var_name: str, var_value):
-        self._locals[var_name] = var_value
+        self.scope[var_name] = var_value
 
     def get_const(self, consti):
         return self._code.co_consts[consti]
@@ -48,27 +63,25 @@ class Interpreter:
         return self._code.co_names[namei]
 
     def exec(self):
-        if self._dump_code:
-            self.dump_code()
-
         while True:
             try:
                 instruction = self._instructions[self._next_instruction]
                 fn = getattr(self, "exec_" + instruction.opname)
-                if not fn(instruction.arg):
+                instruction_result = fn(instruction.arg)
+                if not instruction_result:
                     self._next_instruction += 1
-                if self._trace_stack:
+                if self._interpreter.trace_stack:
                     self.dump_stack(instruction)
-            except ReturnValue:
-                break
+            except ReturnValue as e:
+                return e.value
 
-    def dump_code(self):
-        print(f"====dis code of {self._code.co_name}====")
-        print("co_names:", self._code.co_names)
-        print("co_consts:", self._code.co_consts)
-        print("co_code", self._code.co_code)
-        print("co_varnames", self._code.co_varnames)
-        dis.dis(self._code)
+    # def dump_code(self):
+    #     print(f"====dis code of {self._code.co_name}====")
+    #     print("co_names:", self._code.co_names)
+    #     print("co_consts:", self._code.co_consts)
+    #     print("co_code", self._code.co_code)
+    #     print("co_varnames", self._code.co_varnames)
+    #     dis.dis(self._code)
 
     def dump_stack(self, instruction):
         print(f"Stack after {instruction.opname}({instruction.offset}): {self._stack}")
@@ -79,10 +92,8 @@ class Interpreter:
         Pushes the value associated with co_names[namei] onto the stack.
         """
         name = self.get_name(namei)
-        if name in self._locals:
+        if name in self.scope:
             value = self.get_local(name)
-        elif name in self._builtins:
-            value = self._builtins[name]
         else:
             raise NameError(name)
         self.stack_push(value)
@@ -119,7 +130,7 @@ class Interpreter:
         RETURN_VALUE
         Returns with TOS to the caller of the function.
         """
-        raise ReturnValue()
+        raise ReturnValue("return")
 
     def exec_CALL_FUNCTION(self, args_count):
         args = self.stack_popn(args_count)
@@ -169,3 +180,34 @@ class Interpreter:
         )
         self.jump_by_offset(next_instruction_offset)
         return True
+
+
+class Interpreter:
+    builtin_dict = {
+        x: getattr(builtins, x) for x in dir(builtins) if not x.startswith("__")
+    }
+
+    def __init__(self, src: str, local_vars: None, dump_code=False, trace_stack=False):
+        self._dump_code = dump_code
+        self.trace_stack = trace_stack
+
+        self._code = compile(src, filename="", mode="exec")
+        self._scope = ChainMap(self.builtin_dict)
+
+        self._frames = []
+        main_frame = Frame(self, self._code, self._scope)
+        if local_vars:
+            for k, v in local_vars.items():
+                main_frame.set_local(k, v)
+        self._frames.append(main_frame)
+
+    def top_frame(self):
+        return self._frames[-1]
+
+    def get_local(self, name):
+        return self.top_frame().get_local(name)
+
+    def exec(self):
+        if self._dump_code:
+            dump_recursive(self._code)
+        self.top_frame().exec()

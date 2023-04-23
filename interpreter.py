@@ -145,11 +145,27 @@ class Interpreter:
         }
 
         tos1, tos = self.stack_popn(2)
-        self.stack_push(comparers[opname])
-        pass
+        self.stack_push(comparers[opname](tos1, tos))
+        return False
 
     def exec_POP_JUMP_IF_FALSE(self, lineno):
-        pass
+        state = self.stack_pop()
+        if not state:
+            self.jump_by_offset(lineno)
+            return True
+        return False
+
+    def jump_by_offset(self, offset):
+        index = [
+            index
+            for index, instruction in enumerate(self._instructions)
+            if instruction.offset == offset
+        ][0]
+        self._next_instruction = index
 
     def exec_JUMP_FORWARD(self, relative_lineno):
-        pass
+        next_instruction_offset = (
+            self._instructions[self._next_instruction + 1].offset + relative_lineno
+        )
+        self.jump_by_offset(next_instruction_offset)
+        return True

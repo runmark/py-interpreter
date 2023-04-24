@@ -43,6 +43,11 @@ class Frame:
     def set_local(self, var_name: str, var_value):
         self.scope[var_name] = var_value
 
+    def set_args(self, args):
+        for i, v in enumerate(args):
+            name = self._code.co_varnames[i]
+            self.set_local(name, v)
+
     def get_const(self, consti):
         return self._code.co_consts[consti]
 
@@ -130,7 +135,8 @@ class Frame:
         RETURN_VALUE
         Returns with TOS to the caller of the function.
         """
-        raise ReturnValue("return")
+        value = self.stack_pop()
+        raise ReturnValue(value)
 
     def exec_CALL_FUNCTION(self, args_count):
         args = self.stack_popn(args_count)
@@ -174,12 +180,110 @@ class Frame:
         ][0]
         self._next_instruction = index
 
+    def jump_by_delta(self, delta):
+        offset = self._instructions[self._next_instruction + 1].offset + delta
+        self.jump_by_offset(offset)
+
     def exec_JUMP_FORWARD(self, relative_lineno):
         next_instruction_offset = (
             self._instructions[self._next_instruction + 1].offset + relative_lineno
         )
         self.jump_by_offset(next_instruction_offset)
         return True
+
+    def exec_MAKE_FUNCTION(self, flag):
+        """
+        Pushes a new function object on the stack.
+        From bottom to top, the consumed stack must consist of values if the argument carries a specified flag value.
+        """
+        name = self.stack_pop()
+        code = self.stack_pop()
+
+        freevars, annotations, defaults, kwdefaults = None, None, None, None
+
+        if flag & 0x8:
+            freevars = self.stack_pop()
+        if flag & 0x4:
+            annotations = self.stack_pop()
+        if flag & 0x2:
+            kwdefaults = self.stack_pop()
+        if flag & 0x1:
+            defaults = self.stack_pop()
+
+        func = Function(
+            self._interpreter, name, code, freevars, annotations, kwdefaults, defaults
+        )
+
+        self.stack_push(func)
+
+    def exec_LOAD_FAST(self, index):
+        name = self._code.co_varnames[index]
+        value = self.get_local(name)
+        self.stack_push(value)
+
+    def exec_STORE_FAST(self, varindex):
+        name = self._code.co_varnames[varindex]
+        value = self.stack_pop()
+        self.set_local(name, value)
+
+    def exec_GET_ITER(self, _):
+        """Implements TOS = iter(TOS)."""
+        TOS = self.stack_pop()
+        self.stack_push(iter(TOS))
+
+    def exec_FOR_ITER(self, delta):
+        """TOS is an iterator. Call its __next__() method.
+        If this yields a new value, push it on the stack (leaving the iterator below it).
+        If the iterator indicates it is exhausted, TOS is popped, and the byte code counter is incremented by delta.
+        """
+        it = self.stack_pop()
+        try:
+            value = next(it)
+            self.stack_push(it)
+            self.stack_push(value)
+        except StopIteration:
+            self.jump_by_delta(delta)
+            return True
+
+    def exec_BUILD_LIST(self, count):
+        """Creates a list consuming count items from the stack,
+        and pushes the resulting list onto the stack."""
+        items = self.stack_popn(count)
+        self.stack_push(items)
+
+    def exec_LIST_APPEND(self, i):
+        """Calls list.append(TOS1[-i], TOS). Used to implement list comprehensions."""
+        value = self.stack_pop()
+        l = self._stack[-i]
+        assert isinstance(l, list)
+        l.append(value)
+
+    def exec_JUMP_ABSOLUTE(self, lineno):
+        self.jump_by_offset(lineno)
+        return True
+
+
+class Function:
+    def __init__(
+        self, interpreter, name, code, freevars, annotations, kwdefaults, defaults
+    ):
+        self.interpreter = interpreter
+        self.name = name
+        self.code = code
+        self.freevars = freevars
+        self.annonations = annotations
+        self.kwdefaults = kwdefaults
+        self.defaults = defaults
+
+    def __call__(self, *args, **kwargs):
+        frame: Frame = Frame(
+            self.interpreter, self.code, self.interpreter.top_frame().scope
+        )
+        frame.set_args(args)
+        self.interpreter.frame_push(frame)
+        result = frame.exec()
+        self.interpreter.frame_pop()
+        return result
 
 
 class Interpreter:
@@ -192,7 +296,7 @@ class Interpreter:
         self.trace_stack = trace_stack
 
         self._code = compile(src, filename="", mode="exec")
-        self._scope = ChainMap(self.builtin_dict)
+        self._scope = ChainMap(Interpreter.builtin_dict)
 
         self._frames = []
         main_frame = Frame(self, self._code, self._scope)
@@ -203,6 +307,14 @@ class Interpreter:
 
     def top_frame(self):
         return self._frames[-1]
+
+    def frame_push(self, frame):
+        self._frames.append(frame)
+
+    def frame_pop(self):
+        if len(self._frames) == 1:
+            raise RuntimeError("main frame cannot pop out")
+        return self._frames.pop(-1)
 
     def get_local(self, name):
         return self.top_frame().get_local(name)

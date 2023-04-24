@@ -34,16 +34,36 @@ else:
         interpreter = self.exec_interpreter(source, {"a": 3}, False, False)
         self.assertEqual(False, interpreter.get_local("b"))
 
+    def test_define_func(self):
+        source = """
+def f(x):
+    return x + 1
 
-#     def test_define_func(self):
+n = f(a)
+        """.strip()
+        interpreter = self.exec_interpreter(source, {"a": 11}, True, True)
+        self.assertEqual(12, interpreter.get_local("n"))
+
+    def test_list_comprehension(self):
+        source = """
+n = [x for x in range(a) if x>5]
+        """.strip()
+        interpreter = self.exec_interpreter(source, {"a": 10}, True, True)
+        self.assertEqual([6, 7, 8, 9], interpreter.get_local("n"))
+
+
+#     def test_multi_func(self):
 #         source = """
+# def g(x):
+#     return 1
+
 # def f(x):
-#     return x + 1
+#     return x + g(x) + 3
 
 # n = f(a)
 #         """.strip()
 #         interpreter = self.exec_interpreter(source, {"a": 11}, True, True)
-#         self.assertEqual(12, interpreter.get_local("n"))
+#         self.assertEqual(13, interpreter.get_local("n"))
 
 
 # if __name__ == "__main__":
